@@ -1,0 +1,151 @@
+## eric-enm-int-license-manager-db image version
+#global:
+#  registry:
+#    url:
+#  timezone:
+#  enmProperties:
+#    postgres_service:
+
+# R-State of the product. R State should match helm chart version (3.1.0 -> R2A)
+# To automate it when packaging the helm chart rstate can be generated
+# and below value replaced with correct R-State
+productRevision: RSTATE
+labels: {}
+
+images:
+  licenseManagerDb:
+    name: eric-enm-int-license-manager-db
+    tag: VERSION
+    command: "[ '/bin/sh', '-c','bash /app/adplmdb_config.sh ']"
+  licenseManagerDbWait:
+    enabled: true
+    name: eric-enm-init-container
+    tag: 1.64.0-19
+    cmd: "[ '/bin/sh', '-c', 'bash /var/tmp/check_service.sh -s postgres' ]"
+
+imageCredentials:
+  repoPath: proj-enm
+  pullSecret:
+  registry:
+    url: armdocker.rnd.ericsson.se
+  licenseManagerDb:
+    repoPath:
+    registry:
+      url:
+      imagePullPolicy:
+  licenseManagerDbWait:
+    repoPath:
+    registry:
+      url:
+      imagePullPolicy:
+
+## Configure the service
+service:
+  name: eric-enm-int-license-manager-db
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  name:
+
+## Configure the job
+job:
+  name: licensemanagerdb
+  annotations: {}
+  labels: {}
+
+## Configure resource requests and limits
+resources:
+  licenseManagerDb:
+    requests:
+      enabled: true
+      memory: 400Mi
+      cpu: 400m
+      ephemeral-storage:
+    limits:
+      enabled: true
+      memory: 800Mi
+      cpu: 800m
+      ephemeral-storage:
+  licenseManagerDbWait:
+    requests:
+      enabled: true
+      memory: 100Mi
+      cpu: 50m
+      ephemeral-storage:
+    limits:
+      enabled: true
+      memory: 200Mi
+      cpu: 200m
+      ephemeral-storage:
+
+# LivenessProbe Health Check configuration.
+startupProbe:
+  enabled: true
+  httpPort: 12987
+  initialDelaySeconds: 10
+  timeoutSeconds: 15
+  periodSeconds: 30
+  failureThreshold: 20
+livenessProbe:
+  enabled: true
+  httpPort: 12987
+  initialDelaySeconds: 30
+  timeoutSeconds: 15
+  periodSeconds: 30
+  failureThreshold: 1
+readinessProbe:
+  enabled: true
+  httpPort: 12987
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 15
+  failureThreshold: 1
+
+# Extra Annotations to be added to pod
+podAnnotations: {}
+## Tolerations for pod assignment
+tolerations: []
+## Affinity for pod assignment
+affinity: {}
+# Constrain which nodes your pod is eligible to be scheduled on
+nodeAffinity: {}
+priorityClassName: ""
+
+## Node selector
+nodeSelector: {}
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+timezone: UTC
+
+securityContext:
+  supplementalGroups:
+    - 0
+  licenseManagerDb:
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - all
+  licenseManagerDbWait:
+    allowPrivilegeEscalation: true
+    privileged: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: false
+    capabilities:
+      drop:
+        - all
+
+database:
+  credentials:
+    secretName: 'document-database-pg-secret'
+    secretPasswordKey: 'database.user'
+    secretUsernameKey: 'database.password'
+
+terminationGracePeriodSeconds: 30

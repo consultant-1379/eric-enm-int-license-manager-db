@@ -1,0 +1,32 @@
+global:
+  security:
+    tls:
+      enabled: false
+
+service:
+  endpoints:
+    postgres:
+      tls:
+        enforced: optional
+
+credentials:
+  kubernetesSecretName: db-credentials-secret
+
+postgresConfig:
+  max_prepared_transactions: 100
+
+persistentVolumeClaim:
+  enabled: true
+
+  ## database data Persistent Volume Storage Class
+  ## If defined in helm installation, persistentVolumeClaim volume will use defined value as storageClassName to create pvc.
+  ## if not defined, it will use the default storage class on the kubernetes cluster.
+  #storageClassName:
+  size: 500Mi
+  housekeeping_threshold: 100
+
+highAvailability:
+  replicaCount: 1
+
+metrics:
+  enabled: false

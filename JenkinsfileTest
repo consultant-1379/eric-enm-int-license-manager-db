@@ -1,0 +1,149 @@
+#!/usr/bin/env groovy
+
+def defaultBobImage = 'armdocker.rnd.ericsson.se/sandbox/adp-staging/adp-cicd/bob.2.0:1.5.2-0'
+
+def bob = new BobCommand()
+        .bobImage(defaultBobImage)
+        .envVars([NAMESPACE: '${NAMESPACE}',
+                 'DOCUMENT_DB_VERSION': env.DOCUMENT_DB_VERSION,
+        ])
+        .needDockerSocket(true)
+        .toString()
+
+pipeline {
+    agent {
+        node
+        {
+           label SLAVE
+        }
+    }
+    parameters {
+        string(name: 'DOCUMENT_DB_VERSION', defaultValue: '9.2.0-44', description: 'The Document Database version (e.g. 8.18.0-11)')
+        string(name: 'NAMESPACE', defaultValue: 'eric-enm-int-license-manager-db-test', description: 'The namespace the test will be execute (e.g. eric-enm-int-license-manager-db-test)')
+        string(name: 'GERRIT_REFSPEC', defaultValue: '', description: 'The gerrit refspec (e.g. refs/changes/14/18043714/4)')
+        string(name: 'GERRIT_MIRROR', defaultValue: 'ssh://enmadm100@gerrit-gamma-read.seli.gic.ericsson.se:29418', description: 'The gerrit mirror (e.g. ssh://enmadm100@gerrit-gamma-read.seli.gic.ericsson.se:29418)')
+        string(name: 'GERRIT_PROJECT', defaultValue: 'OSS/ENM-Parent/SQ-Gate/com.ericsson.oss.containerisation/eric-enm-int-license-manager-db', description: 'The gerrit project (e.g. OSS/ENM-Parent/SQ-Gate/com.ericsson.oss.containerisation/eric-enm-int-license-manager-db)')
+    }
+    environment {
+        cenm_utilities_docker_image = "armdocker.rnd.ericsson.se/proj-enm/cenm-build-utilities:latest"
+        kubeConfig = "${workspace}/.kube/admin.conf"
+    }
+    stages {
+        stage('Checkout Base Image Git Repository') {
+            steps {
+                script {
+                    checkout changelog: true,  \
+                         scm: [$class: 'GitSCM',  \
+                         branches: [[name: "$GERRIT_REFSPEC"]],  \
+                         doGenerateSubmoduleConfigurations: false,  \
+                         extensions: [[$class: 'BuildChooserSetting', buildChooser: [$class: 'GerritTriggerBuildChooser']]],  \
+                         submoduleCfg: [],  \
+                         userRemoteConfigs: [[refspec: "${GERRIT_REFSPEC}",  \
+                         url: "${GERRIT_MIRROR}/${GERRIT_PROJECT}"]]]
+                }
+            }
+        }
+        stage('Clean') {
+            steps {
+                sh "${bob} clean"
+            }
+        }
+        stage('Inject Credentials file') {
+            steps {
+                script {
+                    withCredentials( [file(credentialsId: 'cn_enm_staging.conf', variable: 'KUBECONFIG')]) {
+                        sh 'mkdir -p ${PWD}/.kube && chmod 775 ${PWD}/.kube'
+                        sh "install -m 600 ${KUBECONFIG} ${WORKSPACE}/.kube/admin.conf"
+                        sh "cat ${WORKSPACE}/.kube/admin.conf"
+                    }
+                }
+            }
+        }
+        stage('Build Chart') {
+            steps {
+                sh "${bob} generate-new-version build-helm"
+            }
+        }
+        stage('Create Namespace') {
+            steps {
+                script {
+                    sh "${bob} create-namespace"
+                }
+            }
+        }
+        stage('Download Dependency Helm Charts') {
+            steps {
+                script {
+                    sh "${bob} download-dependency-helm-charts"
+                }
+            }
+        }
+        stage('Install Dependency Helm Charts') {
+            steps {
+                script {
+                    sh "${bob} install-dependency-helm-charts"
+                }
+            }
+        }
+        stage('Install INT LM DB Chart') {
+            steps {
+                script {
+                    sh "${bob} install-int-lm-db-chart"
+                }
+            }
+        }
+        stage('Test License Manager DB') {
+            steps {
+                script {
+                    sh "${bob} test-license-manager-db"
+                }
+            }
+        }
+        stage('Delete Namespace') {
+            steps {
+                script {
+                    sh "${bob} delete-namespace"
+                }
+            }
+        }
+    }
+}
+
+// More about @Builder: http://mrhaki.blogspot.com/2014/05/groovy-goodness-use-builder-ast.html
+import groovy.transform.builder.Builder
+import groovy.transform.builder.SimpleStrategy
+
+@Builder(builderStrategy = SimpleStrategy, prefix = '')
+class BobCommand {
+    def bobImage = 'bob.2.0:latest'
+    def envVars = [:]
+    def needDockerSocket = false
+
+    String toString() {
+        def env = envVars
+                .collect({ entry -> "-e ${entry.key}=\"${entry.value}\"" })
+                .join(' ')
+
+        def cmd = """\
+            |docker run
+            |--init
+            |--rm
+            |--workdir \${PWD}
+            |--user \$(id -u):\$(id -g)
+            |-v \${PWD}:\${PWD}
+            |-v /etc/group:/etc/group:ro
+            |-v /etc/passwd:/etc/passwd:ro
+            |-v \${HOME}/.m2:\${HOME}/.m2
+            |-v \${HOME}/.docker:\${HOME}/.docker
+            |${needDockerSocket ? '-v /var/run/docker.sock:/var/run/docker.sock' : ''}
+            |${env}
+            |\$(for group in \$(id -G); do printf ' --group-add %s' "\$group"; done)
+            |--group-add \$(stat -c '%g' /var/run/docker.sock)
+            |${bobImage}
+            |"""
+        return cmd
+                .stripMargin()           // remove indentation
+                .replace('\n', ' ')      // join lines
+                .replaceAll(/[ ]+/, ' ') // replace multiple spaces by one
+    }
+}

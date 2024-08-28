@@ -1,0 +1,184 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "eric-enm-int-license-manager-db.name" . }}-job
+  labels:
+    app: {{ template "eric-enm-int-license-manager-db.chart" . }}
+    heritage: "{{ .Release.Service }}"
+    app.kubernetes.io/name: {{ include "eric-enm-int-license-manager-db.name" . }}
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
+    app.kubernetes.io/version: {{ template "eric-enm-int-license-manager-db.chart" . }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+{{- include "eric-enm-int-license-manager-db.product-info" . | indent 4 }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ template "eric-enm-int-license-manager-db.chart" . }}
+        app.kubernetes.io/name: {{ include "eric-enm-int-license-manager-db.name" . }}
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/version: {{ template "eric-enm-int-license-manager-db.chart" . }}
+{{- with .Values.podAnnotations }}
+      annotations:
+{{- include "eric-enm-int-license-manager-db.product-info" . | indent 8 }}
+{{ toYaml . | indent 8 }}
+{{- end }}
+    spec:
+      restartPolicy: Never
+{{- if or .Values.nodeSelector (and .Values.global .Values.global.nodeSelector) }}
+      nodeSelector:
+{{- if .Values.nodeSelector }}
+{{ toYaml .Values.nodeSelector | indent 8 }}
+{{- end }}
+{{- if .Values.global.nodeSelector }}
+{{ toYaml .Values.global.nodeSelector | indent 8 }}
+{{- end }}
+{{- end }}
+{{- if or .Values.tolerations (and .Values.global .Values.global.tolerations) }}
+      tolerations:
+{{- if .Values.tolerations }}
+{{ toYaml .Values.tolerations | indent 8 }}
+{{- end }}
+{{- if .Values.global.tolerations }}
+{{ toYaml .Values.global.tolerations | indent 8 }}
+{{- end }}
+{{- end }}
+{{- if index .Values "images" "licenseManagerDbWait" "enabled" }}
+      initContainers:
+      - name: license-manager-db-wait
+        image: {{ template "eric-enm-int-license-manager-db.licenseManagerDbWait.registryUrl" . }}/{{ template "eric-enm-int-license-manager-db.licenseManagerDbWait.repoPath" . }}/{{ index .Values "images" "licenseManagerDbWait" "name" }}:{{ index .Values "images" "licenseManagerDbWait" "tag" }}
+        imagePullPolicy: {{ template "eric-enm-int-license-manager-db.licenseManagerDbWait.imagePullPolicy" . }}
+        securityContext:
+        {{- if index .Values "securityContext" }}
+          {{- if index .Values "securityContext" "licenseManagerDbWait" }}
+            {{- toYaml ( index .Values "securityContext" "licenseManagerDbWait" ) | nindent 10 }}
+          {{- end }}
+        {{- end }}
+        command: {{ index .Values "images" "licenseManagerDbWait" "command" }}
+{{- if index .Values "resources" "licenseManagerDbWait" "limits" "enabled" }}
+        resources:
+{{- if index .Values "resources" "licenseManagerDbWait" "requests" "enabled" }}
+          requests:
+{{- if index .Values "resources" "licenseManagerDbWait" "requests" "memory" }}
+            memory: {{ index .Values "resources" "licenseManagerDbWait" "requests" "memory" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDbWait" "requests" "cpu" }}
+            cpu: {{ index .Values "resources" "licenseManagerDbWait" "requests" "cpu" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDbWait" "requests" "ephemeral-storage" }}
+            ephemeral-storage: {{ index .Values "resources" "licenseManagerDbWait" "requests" "ephemeral-storage" | quote }}
+{{- end }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDbWait" "limits" "enabled" }}
+          limits:
+{{- if index .Values "resources" "licenseManagerDbWait" "limits" "memory" }}
+            memory: {{ index .Values "resources" "licenseManagerDbWait" "limits" "memory" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDbWait" "limits" "cpu" }}
+            cpu: {{ index .Values "resources" "licenseManagerDbWait" "limits" "cpu" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDbWait" "limits" "ephemeral-storage" }}
+            ephemeral-storage: {{ index .Values "resources" "licenseManagerDbWait" "limits" "ephemeral-storage" | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if index .Values "images" "licenseManagerDbWait" "env" }}
+        env:
+{{ toYaml index .Values "images" "licenseManagerDbWait" "env" | indent 10 }}
+{{- end }}
+{{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+      - name: license-manager-db
+        image: {{ template "eric-enm-int-license-manager-db.licenseManagerDb.registryUrl" . }}/{{ template "eric-enm-int-license-manager-db.licenseManagerDb.repoPath" . }}/{{ index .Values "images" "licenseManagerDb" "name" }}:{{ index .Values "images" "licenseManagerDb" "tag" }}
+        imagePullPolicy: {{ template "eric-enm-int-license-manager-db.licenseManagerDb.imagePullPolicy" . }}
+        securityContext:
+        {{- if index .Values "securityContext" }}
+          {{- if index .Values "securityContext" "licenseManagerDb" }}
+            {{- toYaml ( index .Values.securityContext "licenseManagerDb" ) | nindent 10 }}
+          {{- end }}
+        {{- end }}
+        env:
+          - name: TZ
+            value: {{ include "eric-enm-int-license-manager-db.timezone" . }}
+          - name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: {{ required "Postgres DB Admin Secret is required when not using mTLS toward Document Database PG" .Values.database.credentials.secretName | quote }}
+                key: {{ .Values.database.credentials.secretPasswordKey | quote }}
+          - name: PG_USER
+            valueFrom:
+              secretKeyRef:
+                name: {{ required "Postgres DB User Secret is required when not using mTLS toward Document Database PG" .Values.database.credentials.secretName | quote }}
+                key: {{ .Values.database.credentials.secretUsernameKey | quote }}
+          - name: POSTGRES_SERVICE
+            value: {{ include "eric-enm-int-license-manager-db.pgService" . }}
+{{- if index .Values "images" "licenseManagerDb" "command" }}
+        command: {{ index .Values "images" "licenseManagerDb" "command" }}
+{{- end }}
+{{- if or ( index .Values "resources" "licenseManagerDb" "requests" "enabled") ( index .Values "resources" "licenseManagerDb" "limits" "enabled") }}
+        resources:
+{{- if index .Values "resources" "licenseManagerDb" "requests" "enabled" }}
+          requests:
+{{- if index .Values "resources" "licenseManagerDb" "requests" "memory" }}
+            memory: {{ index .Values "resources" "licenseManagerDb" "requests" "memory" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDb" "requests" "cpu" }}
+            cpu: {{ index .Values "resources" "licenseManagerDb" "requests" "cpu" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDb" "requests" "ephemeral-storage" }}
+            ephemeral-storage: {{ index .Values "resources" "licenseManagerDb" "requests" "ephemeral-storage" | quote }}
+{{- end }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDb" "limits" "enabled" }}
+          limits:
+{{- if index .Values "resources" "licenseManagerDb" "limits" "memory" }}
+            memory: {{ index .Values "resources" "licenseManagerDb" "limits" "memory" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDb" "limits" "cpu" }}
+            cpu: {{ index .Values "resources" "licenseManagerDb" "limits" "cpu" | quote }}
+{{- end }}
+{{- if index .Values "resources" "licenseManagerDb" "limits" "ephemeral-storage" }}
+            ephemeral-storage: {{ index .Values "resources" "licenseManagerDb" "limits" "ephemeral-storage" | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.startupProbe.enabled }}
+        startupProbe:
+          httpGet:
+            port: {{ .Values.startupProbe.httpPort }}
+          initialDelaySeconds: {{ .Values.startupProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+{{- end }}
+{{- if .Values.livenessProbe.enabled }}
+        livenessProbe:
+          httpGet:
+            port: {{ .Values.livenessProbe.httpPort }}
+          initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+{{- end }}
+{{- if .Values.readinessProbe.enabled }}
+        readinessProbe:
+          httpGet:
+            port: {{ .Values.readinessProbe.httpPort }}
+          initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+{{- end }}
+{{- if include "eric-enm-int-license-manager-db.pullSecrets" . }}
+      imagePullSecrets:
+        - name: {{ template "eric-enm-int-license-manager-db.pullSecrets" . }}
+{{- end }}
+      securityContext:
+        supplementalGroups:
+          {{- if index .Values "securityContext" }}
+          {{- toYaml ( index .Values.securityContext "supplementalGroups" ) | nindent 10 }}
+          {{- end }}
